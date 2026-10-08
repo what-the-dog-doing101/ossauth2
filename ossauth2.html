@@ -1,0 +1,242 @@
+```javascript
+import { initializeApp, getApps } from
+  "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+
+import {
+  getDatabase,
+  ref,
+  push,
+  set,
+  onValue
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyA2ZjHYCYiCNv_u8QsQPq3dKolfJiPZlIg",
+  authDomain: "oss-45b6e.firebaseapp.com",
+  databaseURL: "https://oss-45b6e-default-rtdb.firebaseio.com",
+  projectId: "oss-45b6e",
+  storageBucket: "oss-45b6e.firebasestorage.app",
+  messagingSenderId: "702121227754",
+  appId: "1:702121227754:web:dd66cbf7968df8446f2e93"
+};
+
+const PORTAL_URL = "https://oss-auth-v2.playcode.site/";
+const TICKET_PATH = "authTickets";
+const TICKET_LIFETIME = 15 * 60 * 1000;
+
+const existingApp = getApps().find(
+  app => app.name === "OSS_AUTH_DROPIN"
+);
+
+const app = existingApp ||
+  initializeApp(FIREBASE_CONFIG, "OSS_AUTH_DROPIN");
+
+const db = getDatabase(app);
+
+let unsubscribe = null;
+let expiryTimer = null;
+let lastStatus = null;
+let started = false;
+
+function callWebsite(name, details) {
+  if (typeof window[name] === "function") {
+    try {
+      window[name](details || {});
+    } catch (error) {
+      console.error("OSS Auth callback error:", error);
+    }
+  }
+}
+
+function stopWatching() {
+  if (unsubscribe) {
+    unsubscribe();
+    unsubscribe = null;
+  }
+
+  if (expiryTimer) {
+    clearTimeout(expiryTimer);
+    expiryTimer = null;
+  }
+}
+
+function reportStatus(status, details) {
+  if (lastStatus === status) return;
+
+  lastStatus = status;
+
+  const callbacks = {
+    approved: "AUTH_APPROVED",
+    pending: "AUTH_PENDING",
+    rejected: "AUTH_NOT_APPROVED",
+    expired: "AUTH_EXPIRED",
+    disabled: "AUTH_DISABLED"
+  };
+
+  const callbackName = callbacks[status];
+
+  if (callbackName) {
+    callWebsite(callbackName, details);
+  }
+}
+
+function getExpiry(ticket) {
+  const start = Number(
+    ticket.codeSentAt ||
+    ticket.createdAt ||
+    Date.now()
+  );
+
+  return Number(ticket.expiresAt || start + TICKET_LIFETIME);
+}
+
+function expireTicket(ticket) {
+  stopWatching();
+  reportStatus("expired", { ticket });
+}
+
+function removeTicketFromURL() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("ticket");
+
+  window.history.replaceState(
+    {},
+    document.title,
+    url.href
+  );
+}
+
+function checkTicket(ticket) {
+  if (!ticket || typeof ticket !== "object") {
+    stopWatching();
+    reportStatus("rejected");
+    return;
+  }
+
+  const status = String(ticket.status || "").toLowerCase();
+
+  if (status === "approved") {
+    stopWatching();
+    removeTicketFromURL();
+    reportStatus("approved", { ticket });
+    return;
+  }
+
+  if (Date.now() >= getExpiry(ticket)) {
+    expireTicket(ticket);
+    return;
+  }
+
+  if (
+    status === "denied" ||
+    status === "rejected" ||
+    status === "cancelled" ||
+    status === "failed" ||
+    status === "not-approved"
+  ) {
+    stopWatching();
+    reportStatus("rejected", { ticket });
+    return;
+  }
+
+  if (status === "created" || status === "pending") {
+    reportStatus("pending", { ticket });
+
+    if (expiryTimer) {
+      clearTimeout(expiryTimer);
+    }
+
+    expiryTimer = setTimeout(() => {
+      expireTicket(ticket);
+    }, Math.max(0, getExpiry(ticket) - Date.now()));
+
+    return;
+  }
+
+  stopWatching();
+  reportStatus("rejected", { ticket });
+}
+
+function watchTicket(ticketId) {
+  stopWatching();
+  lastStatus = null;
+
+  const ticketRef = ref(
+    db,
+    TICKET_PATH + "/" + ticketId
+  );
+
+  unsubscribe = onValue(
+    ticketRef,
+    snapshot => {
+      if (!snapshot.exists()) {
+        stopWatching();
+        reportStatus("rejected");
+        return;
+      }
+
+      checkTicket(snapshot.val());
+    },
+    error => {
+      stopWatching();
+      console.error("OSS Auth Firebase error:", error);
+      reportStatus("rejected", { error });
+    }
+  );
+}
+
+async function createTicketAndRedirect() {
+  const returnURL = new URL(window.location.href);
+
+  returnURL.searchParams.delete("ticket");
+
+  const ticketRef = push(ref(db, TICKET_PATH));
+
+  await set(ticketRef, {
+    status: "created",
+    createdAt: Date.now(),
+    redirectUrl: returnURL.href
+  });
+
+  const portalURL = new URL(PORTAL_URL);
+
+  portalURL.searchParams.set("ticket", ticketRef.key);
+  portalURL.searchParams.set("redirect", returnURL.href);
+
+  window.location.assign(portalURL.href);
+}
+
+function startOSSAuth() {
+  if (started) return;
+  started = true;
+
+  if (Number(window.AUTH_ENABLED) === 0) {
+    reportStatus("disabled");
+    return;
+  }
+
+  const currentURL = new URL(window.location.href);
+  const ticketId = currentURL.searchParams.get("ticket");
+
+  if (ticketId) {
+    watchTicket(ticketId);
+  } else {
+    createTicketAndRedirect().catch(error => {
+      console.error("OSS Auth could not start:", error);
+      reportStatus("rejected", { error });
+    });
+  }
+}
+
+window.OSS_AUTH_START = startOSSAuth;
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    startOSSAuth,
+    { once: true }
+  );
+} else {
+  startOSSAuth();
+}
+```
