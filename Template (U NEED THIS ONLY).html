@@ -1,0 +1,356 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OSS Protected Demo</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #f0f7ff;
+      color: #183153;
+      font-family: Arial, sans-serif;
+    }
+
+    header {
+      background: white;
+      border-bottom: 1px solid #dce7f5;
+      padding: 20px 6%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 15px;
+    }
+
+    .brand {
+      font-size: 21px;
+      font-weight: 800;
+    }
+
+    .brand span {
+      color: #2878e3;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #e5efff;
+      color: #245ba5;
+      border-radius: 20px;
+      padding: 8px 12px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+
+    main {
+      max-width: 850px;
+      padding: 24px;
+      margin: 45px auto;
+    }
+
+    .card {
+      background: white;
+      border: 1px solid #dce7f5;
+      border-radius: 18px;
+      padding: 30px;
+      margin-bottom: 20px;
+      box-shadow: 0 10px 35px rgba(30, 65, 110, 0.06);
+    }
+
+    h1 {
+      font-size: clamp(28px, 5vw, 42px);
+      margin: 16px 0 12px;
+    }
+
+    h2 {
+      margin-top: 0;
+    }
+
+    p {
+      line-height: 1.65;
+      color: #62748a;
+    }
+
+    .status {
+      margin-top: 22px;
+      padding: 15px;
+      border-radius: 10px;
+      background: #f2f6fb;
+      color: #344b67;
+      overflow-wrap: anywhere;
+    }
+
+    .tiles {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 14px;
+      margin-top: 25px;
+    }
+
+    .tile {
+      background: #f3f8ff;
+      border: 1px solid #dce7f5;
+      border-radius: 12px;
+      padding: 18px;
+    }
+
+    .tile strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .tile p {
+      font-size: 14px;
+      margin-bottom: 0;
+    }
+
+    .button {
+      border: 0;
+      border-radius: 9px;
+      padding: 12px 18px;
+      background: #2878e3;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 15px;
+    }
+
+    .button:hover {
+      background: #1d62bd;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .green {
+      background: #e7f8ed;
+      color: #176b37;
+    }
+
+    .red {
+      background: #fff0f0;
+      color: #a52c2c;
+    }
+
+    .yellow {
+      background: #fff8df;
+      color: #805c00;
+    }
+
+    footer {
+      text-align: center;
+      padding: 25px;
+      font-size: 12px;
+      color: #8293a8;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="brand">OSS <span>Protected Demo</span></div>
+    <div class="badge" id="headerBadge">CHECKING ACCESS</div>
+  </header>
+
+  <main>
+    <!-- Public status screen -->
+    <section class="card" id="welcomeScreen">
+      <div class="badge">OSS AUTH PORTAL V2</div>
+
+      <h1 id="welcomeTitle">Checking your access...</h1>
+
+      <p id="welcomeDescription">
+        Please wait while your authentication status is checked.
+      </p>
+
+      <div class="status yellow" id="authStatus" aria-live="polite">
+        Initializing authentication...
+      </div>
+
+      <button class="button hidden" id="retryButton">
+        Try Again
+      </button>
+    </section>
+
+    <!-- Protected dashboard: hidden until actual approval -->
+    <section id="protectedDashboard" class="hidden">
+      <div class="card">
+        <div class="badge">VERIFIED ACCESS</div>
+
+        <h1>Welcome to your dashboard!</h1>
+
+        <p>
+          The OSS Auth drop-in reported that your Firebase
+          authentication ticket was approved.
+        </p>
+
+        <div class="tiles">
+          <div class="tile">
+            <strong>🔐 Authentication</strong>
+            <p id="authResult">Approved</p>
+          </div>
+
+          <div class="tile">
+            <strong>🌐 Website</strong>
+            <p>OSS Protected Demo</p>
+          </div>
+
+          <div class="tile">
+            <strong>⚡ Auth Portal</strong>
+            <p>OSS Auth Portal V2</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Protected content</h2>
+        <p>
+          This is the demo's authenticated area. You can replace
+          this section with your own website content.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer>OSS Auth Portal V2 · Authentication Test Site</footer>
+
+  <script>
+    // 1 = authentication ON
+    // 0 = authentication OFF; access remains blocked
+    var AUTH_ENABLED = 1;
+
+    var AUTH_SCRIPT_URL =
+      "https://what-the-dog-doing101.github.io/ossauth2/ossauth2.js";
+
+    var welcomeScreen = document.getElementById("welcomeScreen");
+    var dashboard = document.getElementById("protectedDashboard");
+    var headerBadge = document.getElementById("headerBadge");
+    var authStatus = document.getElementById("authStatus");
+    var welcomeTitle = document.getElementById("welcomeTitle");
+    var welcomeDescription =
+      document.getElementById("welcomeDescription");
+    var retryButton = document.getElementById("retryButton");
+
+    var authFinished = false;
+
+    function showMessage(title, description, message, style) {
+      welcomeScreen.classList.remove("hidden");
+      dashboard.classList.add("hidden");
+
+      welcomeTitle.textContent = title;
+      welcomeDescription.textContent = description;
+      authStatus.textContent = message;
+      authStatus.className = "status " + style;
+    }
+
+    function AUTH_APPROVED(details) {
+      // Only the approved callback reveals the dashboard.
+      authFinished = true;
+
+      welcomeScreen.classList.add("hidden");
+      dashboard.classList.remove("hidden");
+
+      headerBadge.textContent = "ACCESS APPROVED";
+      document.getElementById("authResult").textContent =
+        "Firebase ticket approved";
+    }
+
+    function AUTH_PENDING(details) {
+      if (authFinished) return;
+
+      headerBadge.textContent = "AUTHENTICATION PENDING";
+
+      showMessage(
+        "Verify your access",
+        "Complete the verification steps in the OSS Auth Portal.",
+        "Waiting for Firebase ticket approval...",
+        "yellow"
+      );
+    }
+
+    function AUTH_NOT_APPROVED(details) {
+      if (authFinished) return;
+
+      headerBadge.textContent = "ACCESS NOT APPROVED";
+
+      showMessage(
+        "Access not approved",
+        "Your ticket could not be approved.",
+        "Authentication was rejected or the ticket could not be read.",
+        "red"
+      );
+
+      retryButton.classList.remove("hidden");
+    }
+
+    function AUTH_EXPIRED(details) {
+      if (authFinished) return;
+
+      headerBadge.textContent = "TICKET EXPIRED";
+
+      showMessage(
+        "Authentication expired",
+        "Your authentication ticket has expired.",
+        "Start a new authentication attempt to try again.",
+        "red"
+      );
+
+      retryButton.classList.remove("hidden");
+    }
+
+    function AUTH_DISABLED(details) {
+      // OFF does not mean approved.
+      authFinished = false;
+      headerBadge.textContent = "AUTHENTICATION OFF";
+
+      showMessage(
+        "Authentication is disabled",
+        "This demo is configured to require authentication before showing its dashboard.",
+        "Access has NOT been granted. Set AUTH_ENABLED to 1 to test the portal.",
+        "yellow"
+      );
+
+      retryButton.classList.add("hidden");
+    }
+
+    retryButton.addEventListener("click", function () {
+      var url = new URL(window.location.href);
+      url.searchParams.delete("ticket");
+      window.location.assign(url.href);
+    });
+
+    // Keep the protected content hidden while loading.
+    dashboard.classList.add("hidden");
+
+    if (Number(AUTH_ENABLED) === 0) {
+      AUTH_DISABLED();
+    } else {
+      var authScript = document.createElement("script");
+
+      authScript.src = AUTH_SCRIPT_URL;
+      authScript.type = "module";
+
+      authScript.onerror = function () {
+        headerBadge.textContent = "SCRIPT LOAD ERROR";
+
+        showMessage(
+          "Authentication could not load",
+          "The OSS Auth JavaScript file could not be loaded.",
+          "Check the GitHub Pages URL and make sure loader.js exists.",
+          "red"
+        );
+      };
+
+      document.head.appendChild(authScript);
+    }
+  </script>
+</body>
+</html>
+
